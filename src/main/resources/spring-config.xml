@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns="http://www.springframework.org/schema/beans" xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:aop="http://www.springframework.org/schema/aop" xmlns:mvc="http://www.springframework.org/schema/mvc"
+       xmlns:tx="http://www.springframework.org/schema/tx"
+       xmlns:jpa="http://www.springframework.org/schema/data/jpa"
+       xsi:schemaLocation="http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc-4.3.xsd
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.3.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.3.xsd
+		http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-4.3.xsd
+		http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-4.3.xsd
+		http://www.springframework.org/schema/data/jpa http://www.springframework.org/schema/data/jpa/spring-jpa-1.8.xsd">
+
+    <!--扫描@Service-->
+    <context:component-scan base-package="com.qf.service">
+        <context:include-filter type="annotation" expression="org.springframework.stereotype.Service"/>
+    </context:component-scan>
+
+    <!--1.配置Redis缓存数据库连接池:springdataRedis1.8.9-->
+    <context:property-placeholder location="classpath*:*.properties"/>
+    <bean id="redisPool" class="redis.clients.jedis.JedisPoolConfig">
+        <property name="maxIdle" value="${redis.maxIdle}"></property>
+        <property name="maxWaitMillis" value="${redis.maxWaitMillis}"></property>
+        <property name="maxTotal" value="${redis.maxTotal}"></property>
+        <property name="testOnBorrow" value="${redis.testOnBorrow}"></property>
+    </bean>
+    <!--1.2 配置SpringDataRedis连接工厂-->
+    <bean id="jedisConnectionFactory" class="org.springframework.data.redis.connection.jedis.JedisConnectionFactory">
+        <property name="hostName" value="${redis.host}"></property>
+        <property name="port" value="${redis.port}"></property>
+        <property name="password" value="${redis.password}"></property>
+    </bean>
+    <!--1.3 配置jedis模板，使用的是SpringDataRedis操作-->
+    <bean id="redisTemplate" class="org.springframework.data.redis.core.StringRedisTemplate">
+        <property name="connectionFactory" ref="jedisConnectionFactory"></property>
+        <property name="keySerializer">
+            <bean class="org.springframework.data.redis.serializer.StringRedisSerializer"></bean>
+        </property>
+        <property name="valueSerializer">
+            <bean class="org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer"></bean>
+        </property>
+        <property name="hashKeySerializer">
+            <bean class="org.springframework.data.redis.serializer.StringRedisSerializer"></bean>
+        </property>
+        <property name="hashValueSerializer">
+            <bean class="org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer"></bean>
+        </property>
+        <!--是否开启事务-->
+        <property name="enableTransactionSupport" value="true"></property>
+    </bean>
+    <!--配合RedisUtils,并注入模板-->
+    <bean class="com.qf.common.RedisUtils">
+        <property name="redisTemplate" ref="redisTemplate"></property>
+    </bean>
+
+
+    <!--2.Druid连接池-->
+    <context:property-placeholder location="classpath:jdbc.properties"/>
+    <bean id="dataSource" class="com.alibaba.druid.pool.DruidDataSource" init-method="init" destroy-method="close">
+        <property name="driverClassName" value="${jdbc.driver}"></property>
+        <property name="url" value="${jdbc.url}"></property>
+        <property name="username" value="${jdbc.username}"></property>
+        <property name="password" value="${jdbc.password}"></property>
+
+        <!--配置监控统计拦截的filters-->
+        <property name="filters" value="stat"/>
+
+        <!--配置拦截器初始化大小，最大、最小-->
+        <property name="maxActive" value="20"/>
+        <property name="initialSize" value="1"/>
+        <property name="minIdle" value="1"/>
+
+        <!--配置获取连接等待超时时间-->
+        <property name="maxWait" value="60000"/>
+
+        <!--配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位是毫秒-->
+        <property name="timeBetweenEvictionRunsMillis" value="60000"/>
+
+        <!--配置一个连接在池中最小的生存时间，单位是毫秒-->
+        <property name="minEvictableIdleTimeMillis" value="300000"/>
+
+        <property name="testWhileIdle" value="true"/>
+        <property name="testOnBorrow" value="false"/>
+        <property name="testOnReturn" value="false"/>
+
+        <!--打开PSCache，并且指定每个连接上PSCache的大小-->
+        <property name="poolPreparedStatements" value="true"/>
+        <property name="maxOpenPreparedStatements" value="20"/>
+    </bean>
+
+
+
+    <!--3.配置EntityManagerFactory，相当于sessionFactory-->
+    <bean id="entityManagerFactory" class="org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean">
+        <!--3.1 注入数据源-->
+        <property name="dataSource" ref="dataSource"></property>
+        <!--3.2 注入jpa提供商：HibernateJpaVendorAdapter-->
+        <property name="jpaVendorAdapter">
+            <bean class="org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter"></bean>
+        </property>
+        <!--3.3 配置提供商的属性-->
+        <property name="jpaProperties">
+            <props>
+                <prop key="hibernate.show_sql">true</prop>
+                <prop key="hibernate.format_sql">true</prop>
+                <prop key="hibernate.hbm2ddl.auto">update</prop>
+                <prop key="hibernate.dialect">org.hibernate.dialect.MySQL57Dialect</prop>
+            </props>
+        </property>
+        <!--3.4 扫描持久化类所在的包：建表-->
+        <property name="packagesToScan" value="com.qf.domain"></property>
+    </bean>
+
+    <!--4.配置JPA平台事务管理器-->
+    <bean id="transactionManager" class="org.springframework.orm.jpa.JpaTransactionManager">
+        <property name="entityManagerFactory" ref="entityManagerFactory"></property>
+    </bean>
+
+
+    <!--5.启动事务-->
+    <tx:annotation-driven transaction-manager="transactionManager"/>
+
+
+    <!--6.配置SpringData操作数据库的接口
+            1.声明接口所在包
+            2.引用实体处理工厂
+            3.引用事务平台管理器-->
+    <jpa:repositories base-package="com.qf.dao"
+                      entity-manager-factory-ref="entityManagerFactory"
+                      transaction-manager-ref="transactionManager">
+    </jpa:repositories>
+</beans>
